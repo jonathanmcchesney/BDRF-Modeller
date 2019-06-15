@@ -1,0 +1,14 @@
+#version 330 core
+in vec2 TextureCoords;
+
+out vec4 colour;
+
+uniform sampler2D text;
+uniform vec3 textColor;
+
+// Simple fragment shader - find the sample value using texture look up and assign a colour based on the text colour multipled by this sampled value.
+void main()
+{    
+    vec4 sampledValue = vec4(1.0, 1.0, 1.0, texture(text, TextureCoords).r);
+    colour = vec4(textColor, 1.0) * sampledValue;
+}  

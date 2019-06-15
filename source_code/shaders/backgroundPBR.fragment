@@ -1,0 +1,17 @@
+#version 330 core
+out vec4 FragmentColour;
+
+in vec3 WorldPosition;
+
+uniform samplerCube environmentMap; // Use a sampler cube for the environemntmap (Cubemap)
+
+// In this fragment shaders main method we calculate the environment colour using the texture Level of Detail built in 
+// method and find the RGP component of the vector of world position. we can then normalize with w being 1.0f as opposed 
+// to 0.0f. finally using the pow func we can then even further approximate the environment colour and pass this along to the Fragment Colour.
+void main()
+{		
+    vec3 environmentColour = textureLod(environmentMap, WorldPosition, 0.0).rgb;
+    environmentColour = environmentColour / (environmentColour + vec3(1.0));
+    environmentColour = pow(environmentColour, vec3(1.0/2.2)); 
+    FragmentColour = vec4(environmentColour, 1.0);
+}

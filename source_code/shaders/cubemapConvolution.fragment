@@ -1,0 +1,45 @@
+#version 330 core
+out vec4 FragmentColour;
+in vec3 WorldPos;
+
+uniform samplerCube environmentMap;
+
+const float PI = 3.14159265359f;
+
+// This is the main method for convolution the cubemap - convoluting basically means reducing the level of 
+// detail i.e. blurring the image, in this case it will allow us to achieve a nice diffuse light effect. 
+// We begin by normalizing the Normal of the world postion, instantiating the irradiance to a vec3 of 0s 
+// and calculating the up and right side values in tangent space. We then set the sample delta value and the
+// number of values and iterate through these using sines and cosines of the theta and phi values of the loops 
+// to create the tangent samples which in turn make up the sample vectors which are used to sample for the 
+// irradiance value. This is used to return our Fragment Colour.
+void main()
+{		
+    vec3 N = normalize(WorldPos);
+
+    vec3 irradianceValue = vec3(0.0);   
+    
+    // T-space - origin point (Tangent Space)
+    vec3 upValue = vec3(0.0, 1.0, 0.0);
+    vec3 rightValue = cross(upValue, N);
+    upValue = cross(N, rightValue);
+       
+    float sampleDeltaValue = 0.025f;
+    float numberOfSamples = 0.0f;
+    for(float phi = 0.0; phi < 2.0 * PI; phi += sampleDeltaValue)
+    {
+        for(float theta = 0.0; theta < 0.5 * PI; theta += sampleDeltaValue)
+        {
+            // spherical to cartesian (in T space) :- very important
+            vec3 tangentSampleVector = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
+            // T space to world co-ordinates
+            vec3 sampleVector = tangentSampleVector.x * rightValue + tangentSampleVector.y * upValue + tangentSampleVector.z * N; 
+
+            irradianceValue += texture(environmentMap, sampleVector).rgb * cos(theta) * sin(theta);
+            numberOfSamples++;
+        }
+    }
+    irradianceValue = PI * irradianceValue * (1.0 / float(numberOfSamples)); // #of Samples - limit to 4/5 for perfomance purposes
+    
+    FragmentColour = vec4(irradianceValue, 1.0);
+}

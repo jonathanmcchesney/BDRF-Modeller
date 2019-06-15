@@ -1,0 +1,30 @@
+#version 330 core
+out vec4 FragmentColour;
+in vec3 WorldPos;
+
+uniform sampler2D equirectangularMap; // sphere version of a cubemap
+
+const vec2 invatan = vec2(0.1592, 0.3184);// inverse of Tan value A
+
+// Sample the relevant map, passsing a vec3 value in. The UV components are calculated by taking the 
+// inverse tan of the x and z components of the passed in paramater vector, combined with the sine of 
+// the y component to complete the vec2. We then multiply the result with the inverse tan of A (const) 
+// and finally add 0.5 to the result to ensure a value over a threshold. We then return this UV value.
+vec2 SampleMap(vec3 vector)
+{
+    vec2 UV = vec2(atan(vector.z, vector.x), asin(vector.y));
+    UV *= invatan; // inverse tangent of A
+    UV += 0.5;
+    return UV;
+}
+
+// Within the map we assign a vec2 called UV the results from using the SampleMap function and passing in the
+//  normalized world position coordinates. We thena asign the colour to the sampled rbg values of the 
+// equirectangularMap using the uv vector to sample at that position and return the relevant colour to the Frag colour.
+void main()
+{		
+    vec2 UV = SampleMap(normalize(WorldPos));
+    vec3 colour = texture(equirectangularMap, UV).rgb;
+    
+    FragmentColour = vec4(colour, 1.0);
+}

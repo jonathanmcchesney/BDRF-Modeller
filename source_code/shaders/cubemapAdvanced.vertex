@@ -1,0 +1,15 @@
+#version 330 core
+// Layout Qualifier
+layout (location = 0) in vec3 pos;
+
+out vec3 WorldPos;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+// Assign world position & gl_position values (using PV * World postion with the relevant z component assigned a value of 1.0f).
+void main()
+{
+    WorldPos = pos;   // world position
+    gl_Position =  projection * view * vec4(WorldPos, 1.0);
+}

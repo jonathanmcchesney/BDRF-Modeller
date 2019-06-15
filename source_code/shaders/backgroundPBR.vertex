@@ -1,0 +1,18 @@
+#version 330 core
+// Layout Qualifier
+layout (location = 0) in vec3 position;
+
+uniform mat4 projection, view;
+
+out vec3 WorldPosition;
+// Simple vertex shader: assign the world position - assign the rotated view to match the view matrix 
+// (altered from a mat3 to a mat4 taking the w component into consideration now). We then calculate the 
+// clip position by taking the rotated view into consideration as opposed to the view. We then pass 
+// gl_position through (the xyzw components of the clip Position).
+void main()
+{
+    WorldPosition = position;
+	mat4 rotatedView = mat4(mat3(view));
+	vec4 clipPosition = projection * rotatedView * vec4(WorldPosition, 1.0);
+	gl_Position = clipPosition.xyww;
+}

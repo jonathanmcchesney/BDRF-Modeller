@@ -1,0 +1,23 @@
+#version 330 core
+// Layout Qualifiers
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec2 textureCoords;
+layout (location = 2) in vec3 normal;
+
+out vec2 TextureCoords;
+out vec3 WorldPos;
+out vec3 Normal;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+
+// Calculate the world position and normal values, as well as assign the texture coordinates. Use PV * world position vector (assigning w as 1.0f) to calculate the gl_position.
+void main()
+{
+    TextureCoords = textureCoords;
+    WorldPos = vec3(model * vec4(pos, 1.0f));
+    Normal = mat3(model) * normal;   
+
+    gl_Position =  projection * view * vec4(WorldPos, 1.0);
+}

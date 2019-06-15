@@ -1,0 +1,13 @@
+#version 330 core
+// Layout Qualifiers
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec2 textureCoords;
+
+out vec2 TextureCoords;
+
+// Assign relevant texture coordinate values and the gl_position accordingly (taking the w component to equal 1.0f).
+void main()
+{
+    TextureCoords = textureCoords;
+	gl_Position = vec4(position, 1.0);
+}

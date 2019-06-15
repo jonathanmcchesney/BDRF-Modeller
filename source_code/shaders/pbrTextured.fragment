@@ -1,0 +1,173 @@
+#version 330 core
+out vec4 FragmentColour;
+in vec2 TextureCoords;
+in vec3 WorldPos;
+in vec3 Normal;
+in mat3 TBN;
+
+// material parameters
+uniform sampler2D albedoMap;
+uniform sampler2D normalMap;
+uniform sampler2D metallicMap;
+uniform sampler2D roughnessMap;
+uniform sampler2D aoMap;
+uniform sampler2D texture_diffuse;
+
+uniform vec3 lightPositions[4];
+uniform vec3 lightColors[4];
+
+uniform vec3 camPos;
+uniform float exposure;
+
+uniform samplerCube irradianceMap;
+
+const float PI = 3.14159265359;
+
+// ggx = shading model for reflections. Calculate the ration between roughness and reflectivness. Schlick-Beckmann approximation - Geometry Function.  
+// approximates the ratio of relevant microfacets that overshadow each other - light energy is dispersed as a result. Rough = more overlaps. 
+// Normal, View & Light direction passed from Smiths geometry equation - a float is returned: the dot product of the Normal and View direction divided by 
+// this dot product multiplied by k (this small equation was inspired by epic games which uses the squared roughness for a more realistic look).
+float Schlick(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float nom   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+
+//Geometry Obstruction & Shadowing. - Better approximation of geometry when combined with Schlick equation. [range of values between 0, 1. 
+// 0=no shadows, 1 = microfacet shadowing. returns a float which is the combination of two reflection values passed back from Schlicks equation 
+// with the view direction and light direction as parameters.
+float Smith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ref2 = Schlick(NdotV, roughness);
+    float ref1 = Schlick(NdotL, roughness);
+
+    return ref1 * ref2;
+}
+
+// This was a very important equation to develop. As the freshnel Equation can be approximated more easily thats what I did. 
+// As the freshnel equation references the ratio of light that gets refelcted vs what gets refracted, varying over the viewing angle. 
+// Ratio of reflection while taking into consideration the conservation of energy principle.
+
+// Materials have a base level of reflectivity when looked at perpendicular - and all surfaces should fully reflect light if viewed parallel, - Freshnel. 
+// Only for dielectric materials:- for metals base reflectivity is defined using a different freshnel equation. We pre compute the normal incidence as a result - 
+// Using common values associated with different materials e.g. Iron is (0.56,0.57,0.58). Dielectrics are never over 0.17. - metallic workflow & metalness.
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// specular distribution - approximates the ratio of microfacets aligned to a halfway vector. - Trowbridge-Reitz GGX
+// Halfway vector is used to measure the microfacets - roughness. If we take this to be between the surface normal and light direction
+// over a varying roughness then we get to see how both the diffuse/sepecular component can be approximated yet still adhering to
+// the conservation of energy principle. i.e. large diffue area (weak) -> small specular area (strong).
+
+// If roughness is low (smooth) then the microfacets are concentrated and aligned close to the halfway vector over a very small radius.
+// While when rough their orentiation is more spread out and (random) as a result.
+// Epic games chose to square the roughness for nice effect.
+float Distribution(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness*roughness;
+    float aSqu = a*a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+
+    float nom   = aSqu;
+    float denom = (NdotH2 * (aSqu - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+
+// This method was created to simply calculate the normal vector from a passed through normal map in tangent space. 
+// We first find the relevant xyz coords of the map and convert as necessary and then perform some quick calculations 
+// using opengl's built in differentiation funcs (fun!). after calculating these vectors we then calculate our Tangent, 
+// Bitangent and Normal matrix (making sure to normalize along the way) and return the result.
+vec3 getNormalFromMap()
+{
+    vec3 tangentNormal = texture(normalMap, TextureCoords).xyz * 2.0 - 1.0;
+
+	// Coarse dfdx does not work on some graphic cards - keep at dFdx/y
+    vec3 q1  = dFdx(WorldPos);
+    vec3 q2  = dFdy(WorldPos);
+    vec2 s1 = dFdx(TextureCoords);
+    vec2 s2 = dFdy(TextureCoords);
+
+    vec3 N   = normalize(Normal);
+    vec3 T  = normalize(q1*s2.t - q2*s1.t);
+    vec3 B  = -normalize(cross(N, T));
+    mat3 TBN = mat3(T, B, N);
+
+    return normalize(TBN * tangentNormal);
+}
+
+// This is where the magic happens, the normal view direction and reflection vector are created here (normalizing to NDC 
+// the camPos minus the world position) and the inverse of the view direction and normal to get the relevant reflection vector. 
+// f0 is set to 0.045 - this gives a nice approximation for metals and allows us to accomadate dielectric materials as well. 
+// We then use the mix function to blend samples from the albedo map and metallic map (as this is the textured shader it is a 
+// bit more complicated and we must sample the values from the relevant maps). Then the meat of the main function occurs where we 
+// find the distance, attenuation and radiance values (light intensity over an area). We then findn the distribution, geometry and 
+// freshnel values (approx) and sub these values into the equation to find the brdf. Finally after calculating the relevant light 
+// components (diffuse etc.) and approximation of the specular component we arrive at our conclusion - Fragment Colour.
+void main()
+{		
+     vec3 albedo     = pow(texture(albedoMap, TextureCoords).rgb, vec3(2.2));
+     float metallic  = texture(metallicMap, TextureCoords).r;
+     float roughness = texture(roughnessMap, TextureCoords).r;
+     float ao        = texture(aoMap, TextureCoords).r;
+
+    vec3 N = getNormalFromMap();
+    vec3 V = normalize(camPos - WorldPos);
+	vec3 R = reflect(-V, N); 
+   
+    vec3 F0 = vec3(0.04); 
+    F0 = mix(F0, albedo, metallic);
+
+    vec3 Lo = vec3(0.0);
+    for(int i = 0; i < 4; ++i) 
+    {
+        vec3 L = normalize(lightPositions[i] - WorldPos);
+        vec3 H = normalize(V + L);
+        float distance = length(lightPositions[i] - WorldPos);
+        float attenuation = 1.0 / (distance * distance);
+        vec3 radiance = lightColors[i] * attenuation;
+
+        // Cook-Torrance -BRDF Equation inspiration
+        float NDF = Distribution(N, H, roughness);   
+        float G   = Smith(N, V, L, roughness);      
+        vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
+           
+        vec3 nominator    = NDF * G * F; 
+        float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001; // 0.001 to prevent divide by zero.
+        vec3 brdf = nominator / denominator;
+        
+        vec3 kS = F;
+        vec3 kD = vec3(1.0) - kS;
+        kD *= 1.0 - metallic;	  
+
+        float NdotL = max(dot(N, L), 0.0);        
+
+        Lo += (kD * albedo / PI + brdf) * radiance * NdotL;  
+    }   
+    
+    vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;	  
+    vec3 irradiance = texture(irradianceMap, N).rgb;
+    vec3 diffuse      = irradiance * albedo;
+    vec3 ambient = (kD * diffuse) * ao;
+    
+    vec3 colour = ambient + Lo;
+
+    colour = colour / (colour + vec3(1.0));
+    colour = pow(colour, vec3(1.0/2.2)); 
+
+    //FragColour = vec4(texture(texture_diffuse, TextureCoords));
+    FragmentColour = vec4(colour , 1.0);
+}
