@@ -1,0 +1,22 @@
+#version 330 core
+out vec4 FragColor;
+in vec3 WorldPos;
+
+uniform sampler2D equirectangularMap; // sphere version of a cubemap
+
+const vec2 invatan = vec2(0.1592, 0.3184);
+vec2 SampleMap(vec3 v)
+{
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= invatan; // inverse tangent of A
+    uv += 0.5;
+    return uv;
+}
+
+void main()
+{		
+    vec2 uv = SampleMap(normalize(WorldPos));
+    vec3 color = texture(equirectangularMap, uv).rgb;
+    
+    FragColor = vec4(color, 1.0);
+}
